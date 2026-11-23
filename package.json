@@ -1,0 +1,8 @@
+{
+  "name": "elite-ranking-robot",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "scripts": { "run:dry": "DRY_RUN=1 node scripts/update-ranking.mjs", "run": "node scripts/update-ranking.mjs" },
+  "dependencies": { "firebase-admin": "^12.7.0" }
+}
