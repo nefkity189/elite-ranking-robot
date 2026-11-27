@@ -1,6 +1,7 @@
 // Atualiza somente resultados confirmados. A transacao e o historico tornam cada premio idempotente.
 import { initializeApp, cert } from "firebase-admin/app";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
+import scoring from "./score-finish.cjs";
 
 const DRY = process.env.DRY_RUN === "1";
 const WINDOW_HOURS = Number(process.env.WINDOW_HOURS ?? 6);
@@ -13,45 +14,10 @@ initializeApp({ credential: cert(serviceAccount) });
 const db = getFirestore();
 const seasonRef = db.collection("config").doc("season");
 
-function distanceField(distanceKm) {
-  if (distanceKm === 2.5) return "elo25";
-  if (distanceKm === 5) return "elo5";
-  if (distanceKm === 10) return "elo10";
-  throw new Error(`Distancia invalida: ${distanceKm}`);
-}
-
 async function scorePlayer(missionRef, mission, playerDoc, seasonId) {
-  const uid = playerDoc.id;
-  const userRef = db.collection("users").doc(uid);
-  const historyRef = userRef.collection("competitionHistory").doc(missionRef.id);
-  const points = mission.winnerUid === uid ? 30 : 20;
-  const field = distanceField(mission.distanceKm);
-
-  if (DRY) {
-    console.log(`  ${uid}: ${points} pontos`);
-    return;
-  }
-
-  await db.runTransaction(async (tx) => {
-    const [player, user, history] = await Promise.all([
-      tx.get(playerDoc.ref), tx.get(userRef), tx.get(historyRef),
-    ]);
-    if (history.exists || !user.exists || !player.get("finishedAt") || player.get("withdrawnAt")) return;
-    if (user.get("seasonId") !== seasonId) return;
-
-    tx.update(userRef, {
-      elo: (user.get("elo") ?? 0) + points,
-      [field]: (user.get(field) ?? 0) + points,
-      lastScoredMissionId: missionRef.id,
-    });
-    tx.set(historyRef, {
-      points,
-      distanceKm: mission.distanceKm,
-      finishedAt: player.get("finishedAt"),
-      seasonId,
-    });
-    tx.update(playerDoc.ref, { eloDelta: points });
-  });
+  if (DRY) { console.log(`  ${playerDoc.id}: simula??o, nenhuma grava??o`); return; }
+  const result = await scoring.scoreFinish(db, missionRef.id, playerDoc.id);
+  console.log(`  resultado: ${result.status}${result.reason ? ' ('+result.reason+')' : ''}`);
 }
 
 async function processMission(missionDoc, seasonId) {
